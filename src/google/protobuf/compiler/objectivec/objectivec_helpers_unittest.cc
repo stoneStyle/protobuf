@@ -111,6 +111,8 @@ TEST(ObjCHelper, TextFormatDecodeData_DecodeDataForString_ByteCodes) {
   EXPECT_EQ(expected, result);
 }
 
+// Death tests do not work on Windows as of yet.
+#ifdef PROTOBUF_HAS_DEATH_TEST
 TEST(ObjCHelperDeathTest, TextFormatDecodeData_DecodeDataForString_Failures) {
   // Empty inputs.
 
@@ -136,6 +138,7 @@ TEST(ObjCHelperDeathTest, TextFormatDecodeData_DecodeDataForString_Failures) {
       ::testing::KilledBySignal(SIGABRT),
       "error: got a null char in a string for making TextFormat data, input:");
 }
+#endif  // PROTOBUF_HAS_DEATH_TEST
 
 TEST(ObjCHelper, TextFormatDecodeData_RawStrings) {
   TextFormatDecodeData decode_data;
@@ -198,6 +201,9 @@ TEST(ObjCHelper, TextFormatDecodeData_ByteCodes) {
   EXPECT_EQ(expected, decode_data.Data());
 }
 
+
+// Death tests do not work on Windows as of yet.
+#ifdef PROTOBUF_HAS_DEATH_TEST
 TEST(ObjCHelperDeathTest, TextFormatDecodeData_Failures) {
   TextFormatDecodeData decode_data;
 
@@ -234,6 +240,15 @@ TEST(ObjCHelperDeathTest, TextFormatDecodeData_Failures) {
               ::testing::KilledBySignal(SIGABRT),
               "error: duplicate key \\(2\\) making TextFormat data, input:");
 }
+#endif  // PROTOBUF_HAS_DEATH_TEST
+
+// TODO(thomasvl): Should probably add some unittests for all the special cases
+// of name mangling (class name, field name, enum names).  Rather than doing
+// this with an ObjC test in the objectivec directory, we should be able to
+// use src/google/protobuf/compiler/importer* (like other tests) to support a
+// virtual file system to feed in protos, once we have the Descriptor tree, the
+// tests could use the helper methods for generating names and validate the
+// right things are happening.
 
 }  // namespace
 }  // namespace objectivec

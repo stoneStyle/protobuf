@@ -39,6 +39,7 @@
 #include <google/protobuf/stubs/atomic_sequence_num.h>
 #include <google/protobuf/stubs/atomicops.h>
 #include <google/protobuf/stubs/common.h>
+#include <google/protobuf/stubs/platform_macros.h>
 #include <google/protobuf/stubs/type_traits.h>
 
 namespace google {
@@ -413,12 +414,6 @@ class LIBPROTOBUF_EXPORT Arena {
   // trivially destructible.
   template <typename T> GOOGLE_ATTRIBUTE_ALWAYS_INLINE
   static T* CreateArray(::google::protobuf::Arena* arena, size_t num_elements) {
-#if __cplusplus >= 201103L
-    static_assert(std::is_trivially_default_constructible<T>::value,
-                  "CreateArray requires a trivially constructible type");
-    static_assert(std::is_trivially_destructible<T>::value,
-                  "CreateArray requires a trivially destructible type");
-#endif
     if (arena == NULL) {
       return static_cast<T*>(::operator new[](num_elements * sizeof(T)));
     } else {
@@ -534,7 +529,7 @@ class LIBPROTOBUF_EXPORT Arena {
   // Thread local variables cannot be exposed through DLL interface but we can
   // wrap them in static functions.
   static ThreadCache& thread_cache();
-#elif defined(GOOGLE_PROTOBUF_OS_ANDROID) || defined(GOOGLE_PROTOBUF_OS_IPHONE)
+#elif defined(GOOGLE_PROTOBUF_NO_THREADLOCAL)
   // Android ndk does not support GOOGLE_THREAD_LOCAL keyword so we use a custom thread
   // local storage class we implemented.
   // iOS also does not support the GOOGLE_THREAD_LOCAL keyword.
