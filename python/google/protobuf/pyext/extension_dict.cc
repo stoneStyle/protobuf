@@ -33,6 +33,7 @@
 
 #include <google/protobuf/pyext/extension_dict.h>
 
+#include <google/protobuf/stubs/logging.h>
 #include <google/protobuf/stubs/common.h>
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/dynamic_message.h>
@@ -122,7 +123,8 @@ PyObject* subscript(ExtensionDict* self, PyObject* key) {
   if (descriptor->label() == FieldDescriptor::LABEL_REPEATED) {
     if (descriptor->cpp_type() == FieldDescriptor::CPPTYPE_MESSAGE) {
       PyObject *message_class = cdescriptor_pool::GetMessageClass(
-          GetDescriptorPool(), descriptor->message_type());
+          cmessage::GetDescriptorPoolForMessage(self->parent),
+          descriptor->message_type());
       if (message_class == NULL) {
         return NULL;
       }
@@ -183,7 +185,8 @@ PyObject* ClearExtension(ExtensionDict* self, PyObject* extension) {
       return NULL;
     }
   }
-  if (cmessage::ClearFieldByDescriptor(self->parent, descriptor) == NULL) {
+  if (ScopedPyObjectPtr(cmessage::ClearFieldByDescriptor(
+          self->parent, descriptor)) == NULL) {
     return NULL;
   }
   if (PyDict_DelItem(self->values, extension) < 0) {
@@ -208,7 +211,7 @@ PyObject* _FindExtensionByName(ExtensionDict* self, PyObject* name) {
   if (extensions_by_name == NULL) {
     return NULL;
   }
-  PyObject* result = PyDict_GetItem(extensions_by_name, name);
+  PyObject* result = PyDict_GetItem(extensions_by_name.get(), name);
   if (result == NULL) {
     Py_RETURN_NONE;
   } else {
@@ -268,7 +271,7 @@ PyTypeObject ExtensionDict_Type = {
   0,                                   //  tp_as_number
   0,                                   //  tp_as_sequence
   &extension_dict::MpMethods,          //  tp_as_mapping
-  0,                                   //  tp_hash
+  PyObject_HashNotImplemented,         //  tp_hash
   0,                                   //  tp_call
   0,                                   //  tp_str
   0,                                   //  tp_getattro

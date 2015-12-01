@@ -33,6 +33,7 @@
 #include <Python.h>
 
 #include <google/protobuf/descriptor.pb.h>
+#include <google/protobuf/dynamic_message.h>
 #include <google/protobuf/pyext/descriptor_pool.h>
 #include <google/protobuf/pyext/descriptor.h>
 #include <google/protobuf/pyext/message.h>
@@ -53,9 +54,13 @@ namespace google {
 namespace protobuf {
 namespace python {
 
+// A map to cache Python Pools per C++ pointer.
+// Pointers are not owned here, and belong to the PyDescriptorPool.
+static hash_map<const DescriptorPool*, PyDescriptorPool*> descriptor_pool_map;
+
 namespace cdescriptor_pool {
 
-PyDescriptorPool* NewDescriptorPool() {
+static PyDescriptorPool* NewDescriptorPool() {
   PyDescriptorPool* cdescriptor_pool = PyObject_New(
       PyDescriptorPool, &PyDescriptorPool_Type);
   if (cdescriptor_pool == NULL) {
@@ -67,32 +72,44 @@ PyDescriptorPool* NewDescriptorPool() {
   // as underlay.
   cdescriptor_pool->pool = new DescriptorPool(DescriptorPool::generated_pool());
 
+  DynamicMessageFactory* message_factory = new DynamicMessageFactory();
+  // This option might be the default some day.
+  message_factory->SetDelegateToGeneratedFactory(true);
+  cdescriptor_pool->message_factory = message_factory;
+
   // TODO(amauryfa): Rewrite the SymbolDatabase in C so that it uses the same
   // storage.
   cdescriptor_pool->classes_by_descriptor =
       new PyDescriptorPool::ClassesByMessageMap();
-  cdescriptor_pool->interned_descriptors =
-      new hash_map<const void*, PyObject *>();
   cdescriptor_pool->descriptor_options =
       new hash_map<const void*, PyObject *>();
+
+  if (!descriptor_pool_map.insert(
+      std::make_pair(cdescriptor_pool->pool, cdescriptor_pool)).second) {
+    // Should never happen -- would indicate an internal error / bug.
+    PyErr_SetString(PyExc_ValueError, "DescriptorPool already registered");
+    return NULL;
+  }
 
   return cdescriptor_pool;
 }
 
 static void Dealloc(PyDescriptorPool* self) {
   typedef PyDescriptorPool::ClassesByMessageMap::iterator iterator;
+  descriptor_pool_map.erase(self->pool);
   for (iterator it = self->classes_by_descriptor->begin();
        it != self->classes_by_descriptor->end(); ++it) {
     Py_DECREF(it->second);
   }
   delete self->classes_by_descriptor;
-  delete self->interned_descriptors;  // its references were borrowed.
   for (hash_map<const void*, PyObject*>::iterator it =
            self->descriptor_options->begin();
        it != self->descriptor_options->end(); ++it) {
     Py_DECREF(it->second);
   }
   delete self->descriptor_options;
+  delete self->pool;
+  delete self->message_factory;
   Py_TYPE(self)->tp_free(reinterpret_cast<PyObject*>(self));
 }
 
@@ -115,22 +132,9 @@ PyObject* FindMessageByName(PyDescriptorPool* self, PyObject* arg) {
 }
 
 // Add a message class to our database.
-const Descriptor* RegisterMessageClass(
-    PyDescriptorPool* self, PyObject *message_class, PyObject* descriptor) {
-  ScopedPyObjectPtr full_message_name(
-      PyObject_GetAttrString(descriptor, "full_name"));
-  Py_ssize_t name_size;
-  char* name;
-  if (PyString_AsStringAndSize(full_message_name, &name, &name_size) < 0) {
-    return NULL;
-  }
-  const Descriptor *message_descriptor =
-      self->pool->FindMessageTypeByName(string(name, name_size));
-  if (!message_descriptor) {
-    PyErr_Format(PyExc_TypeError, "Could not find C++ descriptor for '%s'",
-                 name);
-    return NULL;
-  }
+int RegisterMessageClass(PyDescriptorPool* self,
+                         const Descriptor *message_descriptor,
+                         PyObject *message_class) {
   Py_INCREF(message_class);
   typedef PyDescriptorPool::ClassesByMessageMap::iterator iterator;
   std::pair<iterator, bool> ret = self->classes_by_descriptor->insert(
@@ -140,7 +144,7 @@ const Descriptor* RegisterMessageClass(
     Py_DECREF(ret.first->second);
     ret.first->second = message_class;
   }
-  return message_descriptor;
+  return 0;
 }
 
 // Retrieve the message class added to our database.
@@ -244,6 +248,80 @@ PyObject* FindOneofByName(PyDescriptorPool* self, PyObject* arg) {
   return PyOneofDescriptor_FromDescriptor(oneof_descriptor);
 }
 
+PyObject* FindFileContainingSymbol(PyDescriptorPool* self, PyObject* arg) {
+  Py_ssize_t name_size;
+  char* name;
+  if (PyString_AsStringAndSize(arg, &name, &name_size) < 0) {
+    return NULL;
+  }
+
+  const FileDescriptor* file_descriptor =
+      self->pool->FindFileContainingSymbol(string(name, name_size));
+  if (file_descriptor == NULL) {
+    PyErr_Format(PyExc_KeyError, "Couldn't find symbol %.200s", name);
+    return NULL;
+  }
+
+  return PyFileDescriptor_FromDescriptor(file_descriptor);
+}
+
+// These functions should not exist -- the only valid way to create
+// descriptors is to call Add() or AddSerializedFile().
+// But these AddDescriptor() functions were created in Python and some people
+// call them, so we support them for now for compatibility.
+// However we do check that the existing descriptor already exists in the pool,
+// which appears to always be true for existing calls -- but then why do people
+// call a function that will just be a no-op?
+// TODO(amauryfa): Need to investigate further.
+
+PyObject* AddFileDescriptor(PyDescriptorPool* self, PyObject* descriptor) {
+  const FileDescriptor* file_descriptor =
+      PyFileDescriptor_AsDescriptor(descriptor);
+  if (!file_descriptor) {
+    return NULL;
+  }
+  if (file_descriptor !=
+      self->pool->FindFileByName(file_descriptor->name())) {
+    PyErr_Format(PyExc_ValueError,
+                 "The file descriptor %s does not belong to this pool",
+                 file_descriptor->name().c_str());
+    return NULL;
+  }
+  Py_RETURN_NONE;
+}
+
+PyObject* AddDescriptor(PyDescriptorPool* self, PyObject* descriptor) {
+  const Descriptor* message_descriptor =
+      PyMessageDescriptor_AsDescriptor(descriptor);
+  if (!message_descriptor) {
+    return NULL;
+  }
+  if (message_descriptor !=
+      self->pool->FindMessageTypeByName(message_descriptor->full_name())) {
+    PyErr_Format(PyExc_ValueError,
+                 "The message descriptor %s does not belong to this pool",
+                 message_descriptor->full_name().c_str());
+    return NULL;
+  }
+  Py_RETURN_NONE;
+}
+
+PyObject* AddEnumDescriptor(PyDescriptorPool* self, PyObject* descriptor) {
+  const EnumDescriptor* enum_descriptor =
+      PyEnumDescriptor_AsDescriptor(descriptor);
+  if (!enum_descriptor) {
+    return NULL;
+  }
+  if (enum_descriptor !=
+      self->pool->FindEnumTypeByName(enum_descriptor->full_name())) {
+    PyErr_Format(PyExc_ValueError,
+                 "The enum descriptor %s does not belong to this pool",
+                 enum_descriptor->full_name().c_str());
+    return NULL;
+  }
+  Py_RETURN_NONE;
+}
+
 // The code below loads new Descriptors from a serialized FileDescriptorProto.
 
 
@@ -316,7 +394,7 @@ PyObject* Add(PyDescriptorPool* self, PyObject* file_descriptor_proto) {
   if (serialized_pb == NULL) {
     return NULL;
   }
-  return AddSerializedFile(self, serialized_pb);
+  return AddSerializedFile(self, serialized_pb.get());
 }
 
 static PyMethodDef Methods[] = {
@@ -324,6 +402,15 @@ static PyMethodDef Methods[] = {
     "Adds the FileDescriptorProto and its types to this pool." },
   { "AddSerializedFile", (PyCFunction)AddSerializedFile, METH_O,
     "Adds a serialized FileDescriptorProto to this pool." },
+
+  // TODO(amauryfa): Understand why the Python implementation differs from
+  // this one, ask users to use another API and deprecate these functions.
+  { "AddFileDescriptor", (PyCFunction)AddFileDescriptor, METH_O,
+    "No-op. Add() must have been called before." },
+  { "AddDescriptor", (PyCFunction)AddDescriptor, METH_O,
+    "No-op. Add() must have been called before." },
+  { "AddEnumDescriptor", (PyCFunction)AddEnumDescriptor, METH_O,
+    "No-op. Add() must have been called before." },
 
   { "FindFileByName", (PyCFunction)FindFileByName, METH_O,
     "Searches for a file descriptor by its .proto name." },
@@ -337,6 +424,9 @@ static PyMethodDef Methods[] = {
     "Searches for enum type descriptor by full name." },
   { "FindOneofByName", (PyCFunction)FindOneofByName, METH_O,
     "Searches for oneof descriptor by full name." },
+
+  { "FindFileContainingSymbol", (PyCFunction)FindFileContainingSymbol, METH_O,
+    "Gets the FileDescriptor containing the specified symbol." },
   {NULL}
 };
 
@@ -384,22 +474,43 @@ PyTypeObject PyDescriptorPool_Type = {
   PyObject_Del,                        // tp_free
 };
 
-static PyDescriptorPool* global_cdescriptor_pool = NULL;
+// This is the DescriptorPool which contains all the definitions from the
+// generated _pb2.py modules.
+static PyDescriptorPool* python_generated_pool = NULL;
 
 bool InitDescriptorPool() {
   if (PyType_Ready(&PyDescriptorPool_Type) < 0)
     return false;
 
-  global_cdescriptor_pool = cdescriptor_pool::NewDescriptorPool();
-  if (global_cdescriptor_pool == NULL) {
+  python_generated_pool = cdescriptor_pool::NewDescriptorPool();
+  if (python_generated_pool == NULL) {
     return false;
   }
+  // Register this pool to be found for C++-generated descriptors.
+  descriptor_pool_map.insert(
+      std::make_pair(DescriptorPool::generated_pool(),
+                     python_generated_pool));
 
   return true;
 }
 
-PyDescriptorPool* GetDescriptorPool() {
-  return global_cdescriptor_pool;
+PyDescriptorPool* GetDefaultDescriptorPool() {
+  return python_generated_pool;
+}
+
+PyDescriptorPool* GetDescriptorPool_FromPool(const DescriptorPool* pool) {
+  // Fast path for standard descriptors.
+  if (pool == python_generated_pool->pool ||
+      pool == DescriptorPool::generated_pool()) {
+    return python_generated_pool;
+  }
+  hash_map<const DescriptorPool*, PyDescriptorPool*>::iterator it =
+      descriptor_pool_map.find(pool);
+  if (it == descriptor_pool_map.end()) {
+    PyErr_SetString(PyExc_KeyError, "Unknown descriptor pool");
+    return NULL;
+  }
+  return it->second;
 }
 
 }  // namespace python

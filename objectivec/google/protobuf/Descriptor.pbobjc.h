@@ -344,6 +344,7 @@ typedef GPB_ENUM(GPBFieldDescriptorProto_FieldNumber) {
   GPBFieldDescriptorProto_FieldNumber_DefaultValue = 7,
   GPBFieldDescriptorProto_FieldNumber_Options = 8,
   GPBFieldDescriptorProto_FieldNumber_OneofIndex = 9,
+  GPBFieldDescriptorProto_FieldNumber_JsonName = 10,
 };
 
 // Describes a field within a message.
@@ -388,6 +389,13 @@ typedef GPB_ENUM(GPBFieldDescriptorProto_FieldNumber) {
 // list.  This field is a member of that oneof.
 @property(nonatomic, readwrite) BOOL hasOneofIndex;
 @property(nonatomic, readwrite) int32_t oneofIndex;
+
+// JSON name of this field. The value is set by protocol compiler. If the
+// user has set a "json_name" option on this field, that option's value
+// will be used. Otherwise, it's deduced from the field's name by converting
+// it to camelCase.
+@property(nonatomic, readwrite) BOOL hasJsonName;
+@property(nonatomic, readwrite, copy, null_resettable) NSString *jsonName;
 
 @property(nonatomic, readwrite) BOOL hasOptions;
 @property(nonatomic, readwrite, strong, null_resettable) GPBFieldOptions *options;
@@ -531,6 +539,7 @@ typedef GPB_ENUM(GPBFileOptions_FieldNumber) {
   GPBFileOptions_FieldNumber_CcEnableArenas = 31,
   GPBFileOptions_FieldNumber_ObjcClassPrefix = 36,
   GPBFileOptions_FieldNumber_CsharpNamespace = 37,
+  GPBFileOptions_FieldNumber_JavananoUseDeprecatedPackage = 38,
   GPBFileOptions_FieldNumber_UninterpretedOptionArray = 999,
 };
 
@@ -562,10 +571,12 @@ typedef GPB_ENUM(GPBFileOptions_FieldNumber) {
 
 // If set true, then the Java code generator will generate equals() and
 // hashCode() methods for all messages defined in the .proto file.
-// - In the full runtime, this is purely a speed optimization, as the
+// This increases generated code size, potentially substantially for large
+// protos, which may harm a memory-constrained application.
+// - In the full runtime this is a speed optimization, as the
 // AbstractMessage base class includes reflection-based implementations of
 // these methods.
-//- In the lite runtime, setting this option changes the semantics of
+// - In the lite runtime, setting this option changes the semantics of
 // equals() and hashCode() to more closely match those of the full runtime;
 // the generated methods compute their results based on field values rather
 // than object identity. (Implementations should not assume that hashcodes
@@ -632,6 +643,11 @@ typedef GPB_ENUM(GPBFileOptions_FieldNumber) {
 // Namespace for generated classes; defaults to the package.
 @property(nonatomic, readwrite) BOOL hasCsharpNamespace;
 @property(nonatomic, readwrite, copy, null_resettable) NSString *csharpNamespace;
+
+// Whether the nano proto compiler should generate in the deprecated non-nano
+// suffixed package.
+@property(nonatomic, readwrite) BOOL hasJavananoUseDeprecatedPackage;
+@property(nonatomic, readwrite) BOOL javananoUseDeprecatedPackage;
 
 // The parser stores options it doesn't recognize here. See above.
 // |uninterpretedOptionArray| contains |GPBUninterpretedOption|

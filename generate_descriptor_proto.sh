@@ -27,7 +27,6 @@ __EOF__
 fi
 
 cd src
-make $@ google/protobuf/stubs/pbconfig.h
 
 declare -a RUNTIME_PROTO_FILES=(\
   google/protobuf/any.proto \
@@ -93,3 +92,8 @@ do
   PROCESS_ROUND=$((PROCESS_ROUND + 1))
 done
 cd ..
+
+if test -x objectivec/generate_descriptors_proto.sh; then
+  echo "Generating messages for objc."
+  objectivec/generate_descriptors_proto.sh $@
+fi

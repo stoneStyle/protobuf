@@ -32,6 +32,7 @@
 
 #include <google/protobuf/pyext/scalar_map_container.h>
 
+#include <google/protobuf/stubs/logging.h>
 #include <google/protobuf/stubs/common.h>
 #include <google/protobuf/message.h>
 #include <google/protobuf/pyext/message.h>
@@ -82,13 +83,18 @@ PyObject *NewContainer(
     return NULL;
   }
 
+#if PY_MAJOR_VERSION >= 3
+  ScopedPyObjectPtr obj(PyType_GenericAlloc(
+        reinterpret_cast<PyTypeObject *>(ScalarMapContainer_Type), 0));
+#else
   ScopedPyObjectPtr obj(PyType_GenericAlloc(&ScalarMapContainer_Type, 0));
+#endif
   if (obj.get() == NULL) {
     return PyErr_Format(PyExc_RuntimeError,
                         "Could not allocate new container.");
   }
 
-  ScalarMapContainer* self = GetMap(obj);
+  ScalarMapContainer* self = GetMap(obj.get());
 
   self->message = parent->message;
   self->parent = parent;
@@ -154,7 +160,7 @@ int MapKeyMatches(ScalarMapContainer* self, const Message* entry,
   // TODO(haberman): do we need more strict type checking?
   ScopedPyObjectPtr entry_key(
       cmessage::InternalGetScalar(entry, self->key_field_descriptor));
-  int ret = PyObject_RichCompareBool(key, entry_key, Py_EQ);
+  int ret = PyObject_RichCompareBool(key, entry_key.get(), Py_EQ);
   return ret;
 }
 
@@ -245,7 +251,7 @@ int SetItem(PyObject *_self, PyObject *key, PyObject *v) {
       if (matches < 0) return -1;
       if (matches) {
         found = true;
-        if (i != size - 1) {
+        if (i != (int)size - 1) {
           reflection->SwapElements(message, self->parent_field_descriptor, i,
                                    size - 1);
         }
@@ -297,7 +303,7 @@ PyObject* GetIterator(PyObject *_self) {
   // TODO(haberman): add lookup API to Reflection API.
   size_t size =
       reflection->FieldSize(*message, self->parent_field_descriptor);
-  for (int i = 0; i < size; i++) {
+  for (size_t i = 0; i < size; i++) {
     Message* entry = reflection->MutableRepeatedMessage(
         message, self->parent_field_descriptor, i);
     ScopedPyObjectPtr key(
@@ -376,12 +382,6 @@ PyObject* Get(PyObject* self, PyObject* args) {
   }
 }
 
-static PyMappingMethods MpMethods = {
-  Length,    // mp_length
-  GetItem,   // mp_subscript
-  SetItem,   // mp_ass_subscript
-};
-
 static void Dealloc(PyObject* _self) {
   ScalarMapContainer* self = GetMap(_self);
   self->owner.reset();
@@ -431,44 +431,72 @@ PyObject* IterNext(PyObject* _self) {
 
 }  // namespace scalar_map_iterator
 
-PyTypeObject ScalarMapContainer_Type = {
-  PyVarObject_HEAD_INIT(&PyType_Type, 0)
-  FULL_MODULE_NAME ".ScalarMapContainer",  //  tp_name
-  sizeof(ScalarMapContainer),          //  tp_basicsize
-  0,                                   //  tp_itemsize
-  scalar_map_container::Dealloc,       //  tp_dealloc
-  0,                                   //  tp_print
-  0,                                   //  tp_getattr
-  0,                                   //  tp_setattr
-  0,                                   //  tp_compare
-  0,                                   //  tp_repr
-  0,                                   //  tp_as_number
-  0,                                   //  tp_as_sequence
-  &scalar_map_container::MpMethods,    //  tp_as_mapping
-  0,                                   //  tp_hash
-  0,                                   //  tp_call
-  0,                                   //  tp_str
-  0,                                   //  tp_getattro
-  0,                                   //  tp_setattro
-  0,                                   //  tp_as_buffer
-  Py_TPFLAGS_DEFAULT,                  //  tp_flags
-  "A scalar map container",            //  tp_doc
-  0,                                   //  tp_traverse
-  0,                                   //  tp_clear
-  0,                                   //  tp_richcompare
-  0,                                   //  tp_weaklistoffset
-  scalar_map_container::GetIterator,   //  tp_iter
-  0,                                   //  tp_iternext
-  scalar_map_container::Methods,       //  tp_methods
-  0,                                   //  tp_members
-  0,                                   //  tp_getset
-  0,                                   //  tp_base
-  0,                                   //  tp_dict
-  0,                                   //  tp_descr_get
-  0,                                   //  tp_descr_set
-  0,                                   //  tp_dictoffset
-  0,                                   //  tp_init
-};
+ 
+#if PY_MAJOR_VERSION >= 3
+  static PyType_Slot ScalarMapContainer_Type_slots[] = {
+      {Py_tp_dealloc, (void *)scalar_map_container::Dealloc},
+      {Py_mp_length, (void *)scalar_map_container::Length},
+      {Py_mp_subscript, (void *)scalar_map_container::GetItem},
+      {Py_mp_ass_subscript, (void *)scalar_map_container::SetItem},
+      {Py_tp_methods, (void *)scalar_map_container::Methods},
+      {Py_tp_iter, (void *)scalar_map_container::GetIterator},
+      {0, 0},
+  };
+
+  PyType_Spec ScalarMapContainer_Type_spec = {
+      FULL_MODULE_NAME ".ScalarMapContainer",
+      sizeof(ScalarMapContainer),
+      0,
+      Py_TPFLAGS_DEFAULT,
+      ScalarMapContainer_Type_slots
+  };
+  PyObject *ScalarMapContainer_Type;
+#else
+  static PyMappingMethods MpMethods = {
+    scalar_map_container::Length,    // mp_length
+    scalar_map_container::GetItem,   // mp_subscript
+    scalar_map_container::SetItem,   // mp_ass_subscript
+  };
+
+  PyTypeObject ScalarMapContainer_Type = {
+    PyVarObject_HEAD_INIT(&PyType_Type, 0)
+    FULL_MODULE_NAME ".ScalarMapContainer",  //  tp_name
+    sizeof(ScalarMapContainer),          //  tp_basicsize
+    0,                                   //  tp_itemsize
+    scalar_map_container::Dealloc,       //  tp_dealloc
+    0,                                   //  tp_print
+    0,                                   //  tp_getattr
+    0,                                   //  tp_setattr
+    0,                                   //  tp_compare
+    0,                                   //  tp_repr
+    0,                                   //  tp_as_number
+    0,                                   //  tp_as_sequence
+    &MpMethods,                          //  tp_as_mapping
+    0,                                   //  tp_hash
+    0,                                   //  tp_call
+    0,                                   //  tp_str
+    0,                                   //  tp_getattro
+    0,                                   //  tp_setattro
+    0,                                   //  tp_as_buffer
+    Py_TPFLAGS_DEFAULT,                  //  tp_flags
+    "A scalar map container",            //  tp_doc
+    0,                                   //  tp_traverse
+    0,                                   //  tp_clear
+    0,                                   //  tp_richcompare
+    0,                                   //  tp_weaklistoffset
+    scalar_map_container::GetIterator,   //  tp_iter
+    0,                                   //  tp_iternext
+    scalar_map_container::Methods,       //  tp_methods
+    0,                                   //  tp_members
+    0,                                   //  tp_getset
+    0,                                   //  tp_base
+    0,                                   //  tp_dict
+    0,                                   //  tp_descr_get
+    0,                                   //  tp_descr_set
+    0,                                   //  tp_dictoffset
+    0,                                   //  tp_init
+  };
+#endif
 
 PyTypeObject ScalarMapIterator_Type = {
   PyVarObject_HEAD_INIT(&PyType_Type, 0)

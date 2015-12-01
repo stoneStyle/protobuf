@@ -18,6 +18,14 @@ COPTS = [
 # Bazel should provide portable link_opts for pthread.
 LINK_OPTS = ["-lpthread"]
 
+load(
+    "protobuf",
+    "cc_proto_library",
+    "py_proto_library",
+    "internal_copied_filegroup",
+    "internal_protobuf_py_tests",
+)
+
 cc_library(
     name = "protobuf_lite",
     srcs = [
@@ -35,17 +43,20 @@ cc_library(
         "src/google/protobuf/stubs/atomicops_internals_x86_msvc.cc",
         "src/google/protobuf/stubs/bytestream.cc",
         "src/google/protobuf/stubs/common.cc",
+        "src/google/protobuf/stubs/int128.cc",
         "src/google/protobuf/stubs/once.cc",
         "src/google/protobuf/stubs/status.cc",
         "src/google/protobuf/stubs/statusor.cc",
         "src/google/protobuf/stubs/stringpiece.cc",
         "src/google/protobuf/stubs/stringprintf.cc",
+        "src/google/protobuf/stubs/structurally_valid.cc",
         "src/google/protobuf/stubs/strutil.cc",
         "src/google/protobuf/stubs/time.cc",
         "src/google/protobuf/wire_format_lite.cc",
     ],
     copts = COPTS,
     includes = ["src/"],
+    hdrs = glob(["src/google/protobuf/**/*.h"]),
     linkopts = LINK_OPTS,
     visibility = ["//visibility:public"],
 )
@@ -80,13 +91,13 @@ cc_library(
         "src/google/protobuf/source_context.pb.cc",
         "src/google/protobuf/struct.pb.cc",
         "src/google/protobuf/stubs/mathlimits.cc",
-        "src/google/protobuf/stubs/structurally_valid.cc",
         "src/google/protobuf/stubs/substitute.cc",
         "src/google/protobuf/text_format.cc",
         "src/google/protobuf/timestamp.pb.cc",
         "src/google/protobuf/type.pb.cc",
         "src/google/protobuf/unknown_field_set.cc",
         "src/google/protobuf/util/field_comparator.cc",
+        "src/google/protobuf/util/field_mask_util.cc",
         "src/google/protobuf/util/internal/datapiece.cc",
         "src/google/protobuf/util/internal/default_value_objectwriter.cc",
         "src/google/protobuf/util/internal/error_listener.cc",
@@ -102,10 +113,12 @@ cc_library(
         "src/google/protobuf/util/internal/utility.cc",
         "src/google/protobuf/util/json_util.cc",
         "src/google/protobuf/util/message_differencer.cc",
+        "src/google/protobuf/util/time_util.cc",
         "src/google/protobuf/util/type_resolver_util.cc",
         "src/google/protobuf/wire_format.cc",
         "src/google/protobuf/wrappers.pb.cc",
     ],
+    hdrs = glob(["src/**/*.h"]),
     copts = COPTS,
     includes = ["src/"],
     linkopts = LINK_OPTS,
@@ -121,7 +134,7 @@ objc_library(
     visibility = ["//visibility:public"],
 )
 
-WELL_KNOWN_PROTOS = [
+RELATIVE_WELL_KNOWN_PROTOS = [
     # AUTOGEN(well_known_protos)
     "google/protobuf/any.proto",
     "google/protobuf/api.proto",
@@ -136,6 +149,18 @@ WELL_KNOWN_PROTOS = [
     "google/protobuf/type.proto",
     "google/protobuf/wrappers.proto",
 ]
+
+WELL_KNOWN_PROTOS = ["src/" + s for s in RELATIVE_WELL_KNOWN_PROTOS]
+
+cc_proto_library(
+    name = "cc_wkt_protos",
+    srcs = WELL_KNOWN_PROTOS,
+    include = "src",
+    internal_bootstrap_hack = 1,
+    protoc = ":protoc",
+    default_runtime = ":protobuf",
+    visibility = ["//visibility:public"],
+)
 
 ################################################################################
 # Protocol Buffers Compiler
@@ -160,26 +185,28 @@ cc_library(
         "src/google/protobuf/compiler/cpp/cpp_primitive_field.cc",
         "src/google/protobuf/compiler/cpp/cpp_service.cc",
         "src/google/protobuf/compiler/cpp/cpp_string_field.cc",
+        "src/google/protobuf/compiler/csharp/csharp_doc_comment.cc",
         "src/google/protobuf/compiler/csharp/csharp_enum.cc",
         "src/google/protobuf/compiler/csharp/csharp_enum_field.cc",
-        "src/google/protobuf/compiler/csharp/csharp_extension.cc",
         "src/google/protobuf/compiler/csharp/csharp_field_base.cc",
         "src/google/protobuf/compiler/csharp/csharp_generator.cc",
         "src/google/protobuf/compiler/csharp/csharp_helpers.cc",
+        "src/google/protobuf/compiler/csharp/csharp_map_field.cc",
         "src/google/protobuf/compiler/csharp/csharp_message.cc",
         "src/google/protobuf/compiler/csharp/csharp_message_field.cc",
         "src/google/protobuf/compiler/csharp/csharp_primitive_field.cc",
+        "src/google/protobuf/compiler/csharp/csharp_reflection_class.cc",
         "src/google/protobuf/compiler/csharp/csharp_repeated_enum_field.cc",
         "src/google/protobuf/compiler/csharp/csharp_repeated_message_field.cc",
         "src/google/protobuf/compiler/csharp/csharp_repeated_primitive_field.cc",
         "src/google/protobuf/compiler/csharp/csharp_source_generator_base.cc",
-        "src/google/protobuf/compiler/csharp/csharp_umbrella_class.cc",
-        "src/google/protobuf/compiler/csharp/csharp_writer.cc",
+        "src/google/protobuf/compiler/csharp/csharp_wrapper_field.cc",
         "src/google/protobuf/compiler/java/java_context.cc",
         "src/google/protobuf/compiler/java/java_doc_comment.cc",
         "src/google/protobuf/compiler/java/java_enum.cc",
         "src/google/protobuf/compiler/java/java_enum_field.cc",
         "src/google/protobuf/compiler/java/java_enum_field_lite.cc",
+        "src/google/protobuf/compiler/java/java_enum_lite.cc",
         "src/google/protobuf/compiler/java/java_extension.cc",
         "src/google/protobuf/compiler/java/java_field.cc",
         "src/google/protobuf/compiler/java/java_file.cc",
@@ -252,15 +279,18 @@ cc_binary(
 # Tests
 ################################################################################
 
-LITE_TEST_PROTOS = [
+RELATIVE_LITE_TEST_PROTOS = [
     # AUTOGEN(lite_test_protos)
     "google/protobuf/map_lite_unittest.proto",
     "google/protobuf/unittest_import_lite.proto",
     "google/protobuf/unittest_import_public_lite.proto",
     "google/protobuf/unittest_lite.proto",
+    "google/protobuf/unittest_no_arena_lite.proto",
 ]
 
-TEST_PROTOS = [
+LITE_TEST_PROTOS = ["src/" + s for s in RELATIVE_LITE_TEST_PROTOS]
+
+RELATIVE_TEST_PROTOS = [
     # AUTOGEN(test_protos)
     "google/protobuf/any_test.proto",
     "google/protobuf/compiler/cpp/cpp_test_bad_identifiers.proto",
@@ -278,6 +308,7 @@ TEST_PROTOS = [
     "google/protobuf/unittest_import_public.proto",
     "google/protobuf/unittest_lite_imports_nonlite.proto",
     "google/protobuf/unittest_mset.proto",
+    "google/protobuf/unittest_mset_wire_format.proto",
     "google/protobuf/unittest_no_arena.proto",
     "google/protobuf/unittest_no_arena_import.proto",
     "google/protobuf/unittest_no_field_presence.proto",
@@ -293,27 +324,21 @@ TEST_PROTOS = [
     "google/protobuf/util/internal/testdata/default_value_test.proto",
     "google/protobuf/util/internal/testdata/field_mask.proto",
     "google/protobuf/util/internal/testdata/maps.proto",
+    "google/protobuf/util/internal/testdata/oneofs.proto",
     "google/protobuf/util/internal/testdata/struct.proto",
     "google/protobuf/util/internal/testdata/timestamp_duration.proto",
     "google/protobuf/util/json_format_proto3.proto",
 ]
 
-PROTOS = LITE_TEST_PROTOS + TEST_PROTOS
+TEST_PROTOS = ["src/" + s for s in RELATIVE_TEST_PROTOS]
 
-INPUTS = PROTOS + WELL_KNOWN_PROTOS
-
-OUTPUTS = ["src/" + x[:-5] + "pb.h" for x in PROTOS] + \
-          ["src/" + x[:-5] + "pb.cc" for x in PROTOS]
-
-genrule(
-    name = "gen_test_protos",
-    srcs = ["src/" + x for x in INPUTS],
-    outs = OUTPUTS,
-    cmd =
-        "$(location :protoc) --cpp_out=$(@D)/src" +
-        "".join([" -I" + x + "=$(location src/" + x + ")" for x in INPUTS]) +
-        "".join([" $(location src/" + x + ")" for x in PROTOS]),
-    tools = [":protoc"],
+cc_proto_library(
+    name = "cc_test_protos",
+    srcs = LITE_TEST_PROTOS + TEST_PROTOS,
+    include = "src",
+    protoc = ":protoc",
+    default_runtime = ":protobuf",
+    deps = [":cc_wkt_protos"],
 )
 
 COMMON_TEST_SRCS = [
@@ -342,7 +367,7 @@ cc_binary(
 
 cc_test(
     name = "protobuf_test",
-    srcs = OUTPUTS + COMMON_TEST_SRCS + [
+    srcs = COMMON_TEST_SRCS + [
         # AUTOGEN(test_srcs)
         "src/google/protobuf/any_test.cc",
         "src/google/protobuf/arena_unittest.cc",
@@ -381,6 +406,7 @@ cc_test(
         "src/google/protobuf/repeated_field_unittest.cc",
         "src/google/protobuf/stubs/bytestream_unittest.cc",
         "src/google/protobuf/stubs/common_unittest.cc",
+        "src/google/protobuf/stubs/int128_unittest.cc",
         "src/google/protobuf/stubs/once_unittest.cc",
         "src/google/protobuf/stubs/status_test.cc",
         "src/google/protobuf/stubs/statusor_test.cc",
@@ -394,6 +420,7 @@ cc_test(
         "src/google/protobuf/text_format_unittest.cc",
         "src/google/protobuf/unknown_field_set_unittest.cc",
         "src/google/protobuf/util/field_comparator_test.cc",
+        "src/google/protobuf/util/field_mask_util_test.cc",
         "src/google/protobuf/util/internal/default_value_objectwriter_test.cc",
         "src/google/protobuf/util/internal/json_objectwriter_test.cc",
         "src/google/protobuf/util/internal/json_stream_parser_test.cc",
@@ -401,6 +428,7 @@ cc_test(
         "src/google/protobuf/util/internal/protostream_objectwriter_test.cc",
         "src/google/protobuf/util/internal/type_info_test_helper.cc",
         "src/google/protobuf/util/json_util_test.cc",
+        "src/google/protobuf/util/time_util_test.cc",
         "src/google/protobuf/util/type_resolver_util_test.cc",
         "src/google/protobuf/well_known_types_unittest.cc",
         "src/google/protobuf/wire_format_unittest.cc",
@@ -408,15 +436,153 @@ cc_test(
     copts = COPTS,
     data = [
         ":test_plugin",
-    ],
+    ] + glob([
+        "src/google/protobuf/**/*",
+    ]),
     includes = [
         "src/",
     ],
     linkopts = LINK_OPTS,
     deps = [
+        ":cc_test_protos",
         ":protobuf",
         ":protoc_lib",
         "//external:gtest_main",
     ],
 )
 
+################################################################################
+# Java support
+################################################################################
+genrule(
+    name = "generate_java_descriptor_proto",
+    srcs = ["src/google/protobuf/descriptor.proto"],
+    outs = ["com/google/protobuf/DescriptorProtos.java"],
+    cmd = "$(location :protoc) --java_out=$(@D)/../../.. $<",
+    tools = [":protoc"],
+)
+
+java_library(
+    name = "protobuf_java",
+    srcs = glob([
+        "java/src/main/java/com/google/protobuf/*.java",
+    ]) + [
+        ":generate_java_descriptor_proto",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+################################################################################
+# Python support
+################################################################################
+
+# Hack:
+# protoc generated files contain imports like:
+#   "from google.protobuf.xxx import yyy"
+# However, the sources files of the python runtime are not directly under
+# "google/protobuf" (they are under python/google/protobuf).  We workaround
+# this by copying runtime source files into the desired location to workaround
+# the import issue. Ideally py_library should support something similiar to the
+# "include" attribute in cc_library to inject the PYTHON_PATH for all libraries
+# that depend on the target.
+#
+# If you use python protobuf as a third_party library in your bazel managed
+# project:
+# 1) Please import the whole package to //google/protobuf in your
+# project. Otherwise, bazel disallows generated files out of the current
+# package, thus we won't be able to copy protobuf runtime files into
+# //google/protobuf/.
+# 2) The runtime also requires "six" for Python2/3 compatibility, please see the
+# WORKSPACE file and bind "six" to your workspace as well.
+internal_copied_filegroup(
+    name = "python_srcs",
+    srcs = glob(
+        [
+            "python/google/protobuf/*.py",
+            "python/google/protobuf/**/*.py",
+        ],
+        exclude = [
+            "python/google/protobuf/internal/*_test.py",
+            "python/google/protobuf/internal/test_util.py",
+        ],
+    ),
+    include = "python",
+)
+
+py_proto_library(
+    name = "protobuf_python",
+    srcs = WELL_KNOWN_PROTOS,
+    include = "src",
+    protoc = ":protoc",
+    py_extra_srcs = [":python_srcs"],
+    py_libs = ["//external:six"],
+    default_runtime = "",
+    visibility = ["//visibility:public"],
+)
+
+internal_copied_filegroup(
+    name = "python_test_srcs",
+    srcs = glob(
+        [
+            "python/google/protobuf/internal/*_test.py",
+            "python/google/protobuf/internal/test_util.py",
+        ],
+    ),
+    include = "python",
+)
+
+py_proto_library(
+    name = "python_common_test_protos",
+    srcs = LITE_TEST_PROTOS + TEST_PROTOS,
+    include = "src",
+    protoc = ":protoc",
+    deps = [":protobuf_python"],
+    default_runtime = "",
+)
+
+py_proto_library(
+    name = "python_specific_test_protos",
+    srcs = glob([
+        "python/google/protobuf/internal/*.proto",
+        "python/google/protobuf/internal/import_test_package/*.proto",
+    ]),
+    include = "python",
+    protoc = ":protoc",
+    deps = [":python_common_test_protos"],
+    default_runtime = ":protobuf_python",
+)
+
+py_library(
+    name = "python_tests",
+    srcs = [":python_test_srcs"],
+    deps = [
+        ":protobuf_python",
+        ":python_common_test_protos",
+        ":python_specific_test_protos",
+    ],
+)
+
+internal_protobuf_py_tests(
+    name = "python_tests_batch",
+    data = glob([
+        "src/google/protobuf/**/*",
+    ]),
+    modules = [
+        "descriptor_database_test",
+        "descriptor_pool_test",
+        "descriptor_test",
+        "generator_test",
+        "json_format_test",
+        "message_factory_test",
+        "message_test",
+        "proto_builder_test",
+        "reflection_test",
+        "service_reflection_test",
+        "symbol_database_test",
+        "text_encoding_test",
+        "text_format_test",
+        "unknown_fields_test",
+        "wire_format_test",
+    ],
+    deps = [":python_tests"],
+)

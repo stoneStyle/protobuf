@@ -119,6 +119,21 @@ public final class TextFormat {
   }
 
   /**
+   * Generates a human readable form of the field, useful for debugging
+   * and other purposes, with no newline characters.
+   */
+  public static String shortDebugString(final FieldDescriptor field,
+                                        final Object value) {
+    try {
+      final StringBuilder sb = new StringBuilder();
+      SINGLE_LINE_PRINTER.printField(field, value, new TextGenerator(sb));
+      return sb.toString().trim();
+    } catch (IOException e) {
+        throw new IllegalStateException(e);
+    }
+  }
+
+  /**
    * Generates a human readable form of the unknown fields, useful for debugging
    * and other purposes, with no newline characters.
    */
@@ -1175,12 +1190,12 @@ public final class TextFormat {
      * Determines if repeated values for non-repeated fields and
      * oneofs are permitted. For example, given required/optional field "foo"
      * and a oneof containing "baz" and "qux":
-     * <li>
-     * <ul>"foo: 1 foo: 2"
-     * <ul>"baz: 1 qux: 2"
-     * <ul>merging "foo: 2" into a proto in which foo is already set, or
-     * <ul>merging "qux: 2" into a proto in which baz is already set.
-     * </li>
+     * <ul>
+     * <li>"foo: 1 foo: 2"
+     * <li>"baz: 1 qux: 2"
+     * <li>merging "foo: 2" into a proto in which foo is already set, or
+     * <li>merging "qux: 2" into a proto in which baz is already set.
+     * </ul>
      */
     public enum SingularOverwritePolicy {
       /** The last value is retained. */

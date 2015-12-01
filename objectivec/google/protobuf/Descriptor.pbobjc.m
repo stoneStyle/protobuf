@@ -578,6 +578,7 @@ typedef struct GPBDescriptorProto_ReservedRange__storage_ {
 @dynamic hasExtendee, extendee;
 @dynamic hasDefaultValue, defaultValue;
 @dynamic hasOneofIndex, oneofIndex;
+@dynamic hasJsonName, jsonName;
 @dynamic hasOptions, options;
 
 typedef struct GPBFieldDescriptorProto__storage_ {
@@ -591,6 +592,7 @@ typedef struct GPBFieldDescriptorProto__storage_ {
   NSString *typeName;
   NSString *defaultValue;
   GPBFieldOptions *options;
+  NSString *jsonName;
 } GPBFieldDescriptorProto__storage_;
 
 // This method is threadsafe because it is initially called
@@ -679,7 +681,7 @@ typedef struct GPBFieldDescriptorProto__storage_ {
       {
         .name = "options",
         .number = GPBFieldDescriptorProto_FieldNumber_Options,
-        .hasIndex = 8,
+        .hasIndex = 9,
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
         .offset = offsetof(GPBFieldDescriptorProto__storage_, options),
@@ -695,6 +697,17 @@ typedef struct GPBFieldDescriptorProto__storage_ {
         .dataType = GPBDataTypeInt32,
         .offset = offsetof(GPBFieldDescriptorProto__storage_, oneofIndex),
         .defaultValue.valueInt32 = 0,
+        .dataTypeSpecific.className = NULL,
+        .fieldOptions = NULL,
+      },
+      {
+        .name = "jsonName",
+        .number = GPBFieldDescriptorProto_FieldNumber_JsonName,
+        .hasIndex = 8,
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeString,
+        .offset = offsetof(GPBFieldDescriptorProto__storage_, jsonName),
+        .defaultValue.valueString = nil,
         .dataTypeSpecific.className = NULL,
         .fieldOptions = NULL,
       },
@@ -1229,6 +1242,7 @@ typedef struct GPBMethodDescriptorProto__storage_ {
 @dynamic hasCcEnableArenas, ccEnableArenas;
 @dynamic hasObjcClassPrefix, objcClassPrefix;
 @dynamic hasCsharpNamespace, csharpNamespace;
+@dynamic hasJavananoUseDeprecatedPackage, javananoUseDeprecatedPackage;
 @dynamic uninterpretedOptionArray, uninterpretedOptionArray_Count;
 
 typedef struct GPBFileOptions__storage_ {
@@ -1241,6 +1255,7 @@ typedef struct GPBFileOptions__storage_ {
   BOOL deprecated;
   BOOL javaStringCheckUtf8;
   BOOL ccEnableArenas;
+  BOOL javananoUseDeprecatedPackage;
   GPBFileOptions_OptimizeMode optimizeFor;
   NSString *javaPackage;
   NSString *javaOuterClassname;
@@ -1407,6 +1422,17 @@ typedef struct GPBFileOptions__storage_ {
         .dataType = GPBDataTypeString,
         .offset = offsetof(GPBFileOptions__storage_, csharpNamespace),
         .defaultValue.valueString = nil,
+        .dataTypeSpecific.className = NULL,
+        .fieldOptions = NULL,
+      },
+      {
+        .name = "javananoUseDeprecatedPackage",
+        .number = GPBFileOptions_FieldNumber_JavananoUseDeprecatedPackage,
+        .hasIndex = 14,
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBool,
+        .offset = offsetof(GPBFileOptions__storage_, javananoUseDeprecatedPackage),
+        .defaultValue.valueBool = NO,
         .dataTypeSpecific.className = NULL,
         .fieldOptions = NULL,
       },

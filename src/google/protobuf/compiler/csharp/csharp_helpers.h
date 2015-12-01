@@ -69,15 +69,9 @@ CSharpType GetCSharpType(FieldDescriptor::Type type);
 
 std::string StripDotProto(const std::string& proto_file);
 
-std::string GetFileNamespace(const FileDescriptor* descriptor);
-std::string GetFileUmbrellaClassname(const FileDescriptor* descriptor);
-std::string GetFileUmbrellaNamespace(const FileDescriptor* descriptor);
+// Gets unqualified name of the reflection class
+std::string GetReflectionClassUnqualifiedName(const FileDescriptor* descriptor);
 
-std::string GetFullUmbrellaClassName(const FileDescriptor* descriptor);
-
-std::string GetQualifiedUmbrellaClassName(const FileDescriptor* descriptor);
-
-std::string GetClassName(const Descriptor* descriptor);
 std::string GetClassName(const EnumDescriptor* descriptor);
 
 std::string GetFieldName(const FieldDescriptor* descriptor);
@@ -88,7 +82,11 @@ std::string GetPropertyName(const FieldDescriptor* descriptor);
 
 int GetFixedSize(FieldDescriptor::Type type);
 
-std::string UnderscoresToCamelCase(const std::string& input, bool cap_next_letter);
+std::string UnderscoresToCamelCase(const std::string& input, bool cap_next_letter, bool preserve_period);
+
+inline std::string UnderscoresToCamelCase(const std::string& input, bool cap_next_letter) {
+  return UnderscoresToCamelCase(input, cap_next_letter, false);
+}
 
 std::string UnderscoresToPascalCase(const std::string& input);
 
@@ -99,10 +97,22 @@ std::string FileDescriptorToBase64(const FileDescriptor* descriptor);
 
 FieldGeneratorBase* CreateFieldGenerator(const FieldDescriptor* descriptor, int fieldOrdinal);
 
-bool HasRequiredFields(const Descriptor* descriptor);
+// Determines whether the given message is a map entry message, i.e. one implicitly created
+// by protoc due to a map<key, value> field.
+inline bool IsMapEntryMessage(const Descriptor* descriptor) {
+  return descriptor->options().map_entry();
+}
 
-inline bool SupportFieldPresence(const FileDescriptor* file) {
-  return file->syntax() != FileDescriptor::SYNTAX_PROTO3;
+// Determines whether we're generating code for the proto representation of descriptors etc,
+// for use in the runtime. This is the only type which is allowed to use proto2 syntax,
+// and it generates internal classes.
+inline bool IsDescriptorProto(const FileDescriptor* descriptor) {
+  return descriptor->name() == "google/protobuf/descriptor.proto";
+}
+
+inline bool IsWrapperType(const FieldDescriptor* descriptor) {
+  return descriptor->type() == FieldDescriptor::TYPE_MESSAGE &&
+      descriptor->message_type()->file()->name() == "google/protobuf/wrappers.proto";
 }
 
 }  // namespace csharp

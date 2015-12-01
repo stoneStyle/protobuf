@@ -28,16 +28,27 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#PY25 compatible for GAE.
-#
-# Copyright 2007 Google Inc. All Rights Reserved.
+"""Contains routines for printing protocol messages in text format.
 
-"""Contains routines for printing protocol messages in text format."""
+Simple usage example:
+
+  # Create a proto object and serialize it to a text proto string.
+  message = my_proto_pb2.MyMessage(foo='bar')
+  text_proto = text_format.MessageToString(message)
+
+  # Parse a text proto string.
+  message = text_format.Parse(text_proto, my_proto_pb2.MyMessage())
+"""
 
 __author__ = 'kenton@google.com (Kenton Varda)'
 
-import cStringIO
+import io
 import re
+
+import six
+
+if six.PY3:
+  long = int
 
 from google.protobuf.internal import type_checkers
 from google.protobuf import descriptor
@@ -64,6 +75,25 @@ class Error(Exception):
 class ParseError(Error):
   """Thrown in case of ASCII parsing error."""
 
+class TextWriter(object):
+  def __init__(self, as_utf8):
+    if six.PY2:
+      self._writer = io.BytesIO()
+    else:
+      self._writer = io.StringIO()
+
+  def write(self, val):
+    if six.PY2:
+      if isinstance(val, six.text_type):
+        val = val.encode('utf-8')
+    return self._writer.write(val)
+
+  def close(self):
+    return self._writer.close()
+
+  def getvalue(self):
+    return self._writer.getvalue()
+
 
 def MessageToString(message, as_utf8=False, as_one_line=False,
                     pointy_brackets=False, use_index_order=False,
@@ -89,7 +119,7 @@ def MessageToString(message, as_utf8=False, as_one_line=False,
   Returns:
     A string of the text formatted protocol buffer message.
   """
-  out = cStringIO.StringIO()
+  out = TextWriter(as_utf8)
   PrintMessage(message, out, as_utf8=as_utf8, as_one_line=as_one_line,
                pointy_brackets=pointy_brackets,
                use_index_order=use_index_order,
@@ -113,7 +143,7 @@ def PrintMessage(message, out, indent=0, as_utf8=False, as_one_line=False,
     fields.sort(key=lambda x: x[0].index)
   for field, value in fields:
     if _IsMapEntry(field):
-      for key in value:
+      for key in sorted(value):
         # This is slow for maps with submessage entires because it copies the
         # entire tree.  Unfortunately this would take significant refactoring
         # of this file to work around.
@@ -135,7 +165,6 @@ def PrintMessage(message, out, indent=0, as_utf8=False, as_one_line=False,
                  pointy_brackets=pointy_brackets,
                  use_index_order=use_index_order,
                  float_format=float_format)
-
 
 def PrintField(field, value, out, indent=0, as_utf8=False, as_one_line=False,
                pointy_brackets=False, use_index_order=False, float_format=None):
@@ -211,7 +240,7 @@ def PrintFieldValue(field, value, out, indent=0, as_utf8=False,
       out.write(str(value))
   elif field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_STRING:
     out.write('\"')
-    if isinstance(value, unicode):
+    if isinstance(value, six.text_type):
       out_value = value.encode('utf-8')
     else:
       out_value = value
@@ -537,7 +566,7 @@ class _Tokenizer(object):
   def _PopLine(self):
     while len(self._current_line) <= self._column:
       try:
-        self._current_line = self._lines.next()
+        self._current_line = next(self._lines)
       except StopIteration:
         self._current_line = ''
         self._more_lines = False
@@ -607,7 +636,7 @@ class _Tokenizer(object):
     """
     try:
       result = ParseInteger(self.token, is_signed=True, is_long=False)
-    except ValueError, e:
+    except ValueError as e:
       raise self._ParseError(str(e))
     self.NextToken()
     return result
@@ -623,7 +652,7 @@ class _Tokenizer(object):
     """
     try:
       result = ParseInteger(self.token, is_signed=False, is_long=False)
-    except ValueError, e:
+    except ValueError as e:
       raise self._ParseError(str(e))
     self.NextToken()
     return result
@@ -639,7 +668,7 @@ class _Tokenizer(object):
     """
     try:
       result = ParseInteger(self.token, is_signed=True, is_long=True)
-    except ValueError, e:
+    except ValueError as e:
       raise self._ParseError(str(e))
     self.NextToken()
     return result
@@ -655,7 +684,7 @@ class _Tokenizer(object):
     """
     try:
       result = ParseInteger(self.token, is_signed=False, is_long=True)
-    except ValueError, e:
+    except ValueError as e:
       raise self._ParseError(str(e))
     self.NextToken()
     return result
@@ -671,7 +700,7 @@ class _Tokenizer(object):
     """
     try:
       result = ParseFloat(self.token)
-    except ValueError, e:
+    except ValueError as e:
       raise self._ParseError(str(e))
     self.NextToken()
     return result
@@ -687,7 +716,7 @@ class _Tokenizer(object):
     """
     try:
       result = ParseBool(self.token)
-    except ValueError, e:
+    except ValueError as e:
       raise self._ParseError(str(e))
     self.NextToken()
     return result
@@ -703,8 +732,8 @@ class _Tokenizer(object):
     """
     the_bytes = self.ConsumeByteString()
     try:
-      return unicode(the_bytes, 'utf-8')
-    except UnicodeDecodeError, e:
+      return six.text_type(the_bytes, 'utf-8')
+    except UnicodeDecodeError as e:
       raise self._StringParseError(e)
 
   def ConsumeByteString(self):
@@ -719,8 +748,7 @@ class _Tokenizer(object):
     the_list = [self._ConsumeSingleByteString()]
     while self.token and self.token[0] in ('\'', '"'):
       the_list.append(self._ConsumeSingleByteString())
-    return ''.encode('latin1').join(the_list)  ##PY25
-##!PY25    return b''.join(the_list)
+    return b''.join(the_list)
 
   def _ConsumeSingleByteString(self):
     """Consume one token of a string literal.
@@ -741,7 +769,7 @@ class _Tokenizer(object):
 
     try:
       result = text_encoding.CUnescape(text[1:-1])
-    except ValueError, e:
+    except ValueError as e:
       raise self._ParseError(str(e))
     self.NextToken()
     return result
@@ -749,7 +777,7 @@ class _Tokenizer(object):
   def ConsumeEnum(self, field):
     try:
       result = ParseEnum(field, self.token)
-    except ValueError, e:
+    except ValueError as e:
       raise self._ParseError(str(e))
     self.NextToken()
     return result

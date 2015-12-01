@@ -48,7 +48,6 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Lite version of {@link GeneratedMessage}.
@@ -60,63 +59,78 @@ public abstract class GeneratedMessageLite<
     BuilderType extends GeneratedMessageLite.Builder<MessageType, BuilderType>> 
         extends AbstractMessageLite
         implements Serializable {
-  
-  /**
-   * Holds all the {@link PrototypeHolder}s for loaded classes.
-   */
-  // TODO(dweis): Consider different concurrency values.
-  // TODO(dweis): This will prevent garbage collection of the class loader.
-  //     Ideally we'd use something like ClassValue but that's Java 7 only.
-  private static final Map<Class<?>, PrototypeHolder<?, ?>> PROTOTYPE_MAP =
-      new ConcurrentHashMap<Class<?>, PrototypeHolder<?, ?>>();
-  
-  // For use by generated code only.
-  protected static <
-      MessageType extends GeneratedMessageLite<MessageType, BuilderType>,
-      BuilderType extends GeneratedMessageLite.Builder<
-          MessageType, BuilderType>> void onLoad(Class<MessageType> clazz,
-              PrototypeHolder<MessageType, BuilderType> protoTypeHolder) {
-    PROTOTYPE_MAP.put(clazz, protoTypeHolder);
-  }
 
   private static final long serialVersionUID = 1L;
 
-  /** For use by generated code only.  */
-  protected UnknownFieldSetLite unknownFields =
-      UnknownFieldSetLite.getDefaultInstance();
+  /** For use by generated code only. Lazily initialized to reduce allocations. */
+  protected UnknownFieldSetLite unknownFields = null;
   
   /** For use by generated code only.  */
   protected int memoizedSerializedSize = -1;
   
   @SuppressWarnings("unchecked") // Guaranteed by runtime.
   public final Parser<MessageType> getParserForType() {
-    return (Parser<MessageType>) PROTOTYPE_MAP
-        .get(getClass()).getParserForType();
+    return (Parser<MessageType>) dynamicMethod(MethodToInvoke.GET_PARSER);
   }
 
   @SuppressWarnings("unchecked") // Guaranteed by runtime.
   public final MessageType getDefaultInstanceForType() {
-    return (MessageType) PROTOTYPE_MAP
-        .get(getClass()).getDefaultInstanceForType();
+    return (MessageType) dynamicMethod(MethodToInvoke.GET_DEFAULT_INSTANCE);
   }
 
   @SuppressWarnings("unchecked") // Guaranteed by runtime.
   public final BuilderType newBuilderForType() {
-    return (BuilderType) PROTOTYPE_MAP
-        .get(getClass()).newBuilderForType();
+    return (BuilderType) dynamicMethod(MethodToInvoke.NEW_BUILDER);
+  }
+
+  // The general strategy for unknown fields is to use an UnknownFieldSetLite that is treated as
+  // mutable during the parsing constructor and immutable after. This allows us to avoid
+  // any unnecessary intermediary allocations while reducing the generated code size.
+
+  /**
+   * Lazily initializes unknown fields.
+   */
+  private final void ensureUnknownFieldsInitialized() {
+    if (unknownFields == null) {
+      unknownFields = UnknownFieldSetLite.newInstance();
+    }
+  }
+  
+  /**
+   * Called by subclasses to parse an unknown field. For use by generated code only.
+   * 
+   * @return {@code true} unless the tag is an end-group tag.
+   */
+  protected boolean parseUnknownField(int tag, CodedInputStream input) throws IOException {
+    ensureUnknownFieldsInitialized();
+    return unknownFields.mergeFieldFrom(tag, input);
   }
 
   /**
-   * Called by subclasses to parse an unknown field. For use by generated code
-   * only.
-   * @return {@code true} unless the tag is an end-group tag.
+   * Called by subclasses to parse an unknown field. For use by generated code only.
    */
-  protected static boolean parseUnknownField(
-      CodedInputStream input,
-      UnknownFieldSetLite.Builder unknownFields,
-      ExtensionRegistryLite extensionRegistry,
-      int tag) throws IOException {
-    return unknownFields.mergeFieldFrom(tag, input);
+  protected void mergeVarintField(int tag, int value) {
+    ensureUnknownFieldsInitialized();
+    unknownFields.mergeVarintField(tag, value);
+  }
+  
+  /**
+   * Called by subclasses to parse an unknown field. For use by generated code only.
+   */
+  protected void mergeLengthDelimitedField(int fieldNumber, ByteString value) {
+    ensureUnknownFieldsInitialized();
+    unknownFields.mergeLengthDelimitedField(fieldNumber, value);
+  }
+  
+  /**
+   * Called by subclasses to complete parsing. For use by generated code only.
+   */
+  protected void doneParsing() {
+    if (unknownFields == null) {
+      unknownFields = UnknownFieldSetLite.getDefaultInstance();
+    } else {
+      unknownFields.makeImmutable();
+    }
   }
 
   public final boolean isInitialized() {
@@ -141,7 +155,9 @@ public abstract class GeneratedMessageLite<
     MERGE_FROM,
     MAKE_IMMUTABLE,
     NEW_INSTANCE,
-    NEW_BUILDER;
+    NEW_BUILDER,
+    GET_DEFAULT_INSTANCE,
+    GET_PARSER;
   }
 
   /**
@@ -168,9 +184,21 @@ public abstract class GeneratedMessageLite<
    * <p>
    * For use by generated code only.
    */
-  protected abstract Object dynamicMethod(
-      MethodToInvoke method,
-      Object... args);
+  protected abstract Object dynamicMethod(MethodToInvoke method, Object arg0, Object arg1);
+
+  /**
+   * Same as {@link #dynamicMethod(MethodToInvoke, Object, Object)} with {@code null} padding.
+   */
+  protected Object dynamicMethod(MethodToInvoke method, Object arg0) {
+    return dynamicMethod(method, arg0, null);
+  }
+
+  /**
+   * Same as {@link #dynamicMethod(MethodToInvoke, Object, Object)} with {@code null} padding.
+   */
+  protected Object dynamicMethod(MethodToInvoke method) {
+    return dynamicMethod(method, null, null);
+  }
 
   /**
    * Merge some unknown fields into the {@link UnknownFieldSetLite} for this
@@ -179,7 +207,7 @@ public abstract class GeneratedMessageLite<
    * <p>For use by generated code only.
    */
   protected final void mergeUnknownFields(UnknownFieldSetLite unknownFields) {
-    this.unknownFields = UnknownFieldSetLite.concat(this.unknownFields, unknownFields);
+    this.unknownFields = UnknownFieldSetLite.mutableCopyOf(this.unknownFields, unknownFields);
   }
 
   @SuppressWarnings("unchecked")
@@ -233,7 +261,13 @@ public abstract class GeneratedMessageLite<
 
     //@Override (Java 1.6 override semantics, but we must support 1.5)
     public MessageType buildPartial() {
+      if (isBuilt) {
+        return instance;
+      }
+      
       instance.dynamicMethod(MethodToInvoke.MAKE_IMMUTABLE);
+      instance.unknownFields.makeImmutable();
+      
       isBuilt = true;
       return instance;
     }
@@ -256,18 +290,6 @@ public abstract class GeneratedMessageLite<
     
     public MessageType getDefaultInstanceForType() {
       return defaultInstance;
-    }
-
-    /**
-     * Called by subclasses to parse an unknown field.
-     * @return {@code true} unless the tag is an end-group tag.
-     */
-    protected boolean parseUnknownField(
-        CodedInputStream input,
-        UnknownFieldSetLite.Builder unknownFields,
-        ExtensionRegistryLite extensionRegistry,
-        int tag) throws IOException {
-      return unknownFields.mergeFieldFrom(tag, input);
     }
     
     public BuilderType mergeFrom(
@@ -342,6 +364,130 @@ public abstract class GeneratedMessageLite<
       extensions.mergeFrom(((ExtendableMessage) other).extensions);
     }
     
+    /**
+     * Parse an unknown field or an extension. For use by generated code only.
+     * 
+     * <p>For use by generated code only.
+     * 
+     * @return {@code true} unless the tag is an end-group tag.
+     */
+    protected <MessageType extends MessageLite> boolean parseUnknownField(
+        MessageType defaultInstance,
+        CodedInputStream input,
+        ExtensionRegistryLite extensionRegistry,
+        int tag) throws IOException {
+      int wireType = WireFormat.getTagWireType(tag);
+      int fieldNumber = WireFormat.getTagFieldNumber(tag);
+
+      // TODO(dweis): How much bytecode would be saved by not requiring the generated code to
+      //     provide the default instance?
+      GeneratedExtension<MessageType, ?> extension = extensionRegistry.findLiteExtensionByNumber(
+          defaultInstance, fieldNumber);
+
+      boolean unknown = false;
+      boolean packed = false;
+      if (extension == null) {
+        unknown = true;  // Unknown field.
+      } else if (wireType == FieldSet.getWireFormatForFieldType(
+                   extension.descriptor.getLiteType(),
+                   false  /* isPacked */)) {
+        packed = false;  // Normal, unpacked value.
+      } else if (extension.descriptor.isRepeated &&
+                 extension.descriptor.type.isPackable() &&
+                 wireType == FieldSet.getWireFormatForFieldType(
+                   extension.descriptor.getLiteType(),
+                   true  /* isPacked */)) {
+        packed = true;  // Packed value.
+      } else {
+        unknown = true;  // Wrong wire type.
+      }
+
+      if (unknown) {  // Unknown field or wrong wire type.  Skip.
+        return parseUnknownField(tag, input);
+      }
+
+      if (packed) {
+        int length = input.readRawVarint32();
+        int limit = input.pushLimit(length);
+        if (extension.descriptor.getLiteType() == WireFormat.FieldType.ENUM) {
+          while (input.getBytesUntilLimit() > 0) {
+            int rawValue = input.readEnum();
+            Object value =
+                extension.descriptor.getEnumType().findValueByNumber(rawValue);
+            if (value == null) {
+              // If the number isn't recognized as a valid value for this
+              // enum, drop it (don't even add it to unknownFields).
+              return true;
+            }
+            extensions.addRepeatedField(extension.descriptor,
+                                        extension.singularToFieldSetType(value));
+          }
+        } else {
+          while (input.getBytesUntilLimit() > 0) {
+            Object value =
+                FieldSet.readPrimitiveField(input,
+                                            extension.descriptor.getLiteType(),
+                                            /*checkUtf8=*/ false);
+            extensions.addRepeatedField(extension.descriptor, value);
+          }
+        }
+        input.popLimit(limit);
+      } else {
+        Object value;
+        switch (extension.descriptor.getLiteJavaType()) {
+          case MESSAGE: {
+            MessageLite.Builder subBuilder = null;
+            if (!extension.descriptor.isRepeated()) {
+              MessageLite existingValue =
+                  (MessageLite) extensions.getField(extension.descriptor);
+              if (existingValue != null) {
+                subBuilder = existingValue.toBuilder();
+              }
+            }
+            if (subBuilder == null) {
+              subBuilder = extension.getMessageDefaultInstance()
+                  .newBuilderForType();
+            }
+            if (extension.descriptor.getLiteType() ==
+                WireFormat.FieldType.GROUP) {
+              input.readGroup(extension.getNumber(),
+                              subBuilder, extensionRegistry);
+            } else {
+              input.readMessage(subBuilder, extensionRegistry);
+            }
+            value = subBuilder.build();
+            break;
+          }
+          case ENUM:
+            int rawValue = input.readEnum();
+            value = extension.descriptor.getEnumType()
+                             .findValueByNumber(rawValue);
+            // If the number isn't recognized as a valid value for this enum,
+            // write it to unknown fields object.
+            if (value == null) {
+              mergeVarintField(fieldNumber, rawValue);
+              return true;
+            }
+            break;
+          default:
+            value = FieldSet.readPrimitiveField(input,
+                extension.descriptor.getLiteType(),
+                /*checkUtf8=*/ false);
+            break;
+        }
+
+        if (extension.descriptor.isRepeated()) {
+          extensions.addRepeatedField(extension.descriptor,
+                                      extension.singularToFieldSetType(value));
+        } else {
+          extensions.setField(extension.descriptor,
+                              extension.singularToFieldSetType(value));
+        }
+      }
+
+      return true;
+    }
+    
     private void verifyExtensionContainingType(
         final GeneratedExtension<MessageType, ?> extension) {
       if (extension.getContainingTypeDefaultInstance() !=
@@ -412,11 +558,10 @@ public abstract class GeneratedMessageLite<
     }
 
 
-    /**
-     * Used by parsing constructors in generated classes.
-     */
-    protected static void makeExtensionsImmutable(
-        FieldSet<ExtensionDescriptor> extensions) {
+    @Override
+    protected final void doneParsing() {
+      super.doneParsing();
+      
       extensions.makeImmutable();
     }
 
@@ -627,131 +772,6 @@ public abstract class GeneratedMessageLite<
     }
   }
 
-  //-----------------------------------------------------------------
-
-  /**
-   * Parse an unknown field or an extension. For use by generated code only.
-   * @return {@code true} unless the tag is an end-group tag.
-   */
-  protected static <MessageType extends MessageLite>
-      boolean parseUnknownField(
-          FieldSet<ExtensionDescriptor> extensions,
-          MessageType defaultInstance,
-          CodedInputStream input,
-          UnknownFieldSetLite.Builder unknownFields,
-          ExtensionRegistryLite extensionRegistry,
-          int tag) throws IOException {
-    int wireType = WireFormat.getTagWireType(tag);
-    int fieldNumber = WireFormat.getTagFieldNumber(tag);
-
-    GeneratedExtension<MessageType, ?> extension =
-      extensionRegistry.findLiteExtensionByNumber(
-          defaultInstance, fieldNumber);
-
-    boolean unknown = false;
-    boolean packed = false;
-    if (extension == null) {
-      unknown = true;  // Unknown field.
-    } else if (wireType == FieldSet.getWireFormatForFieldType(
-                 extension.descriptor.getLiteType(),
-                 false  /* isPacked */)) {
-      packed = false;  // Normal, unpacked value.
-    } else if (extension.descriptor.isRepeated &&
-               extension.descriptor.type.isPackable() &&
-               wireType == FieldSet.getWireFormatForFieldType(
-                 extension.descriptor.getLiteType(),
-                 true  /* isPacked */)) {
-      packed = true;  // Packed value.
-    } else {
-      unknown = true;  // Wrong wire type.
-    }
-
-    if (unknown) {  // Unknown field or wrong wire type.  Skip.
-      return unknownFields.mergeFieldFrom(tag, input);
-    }
-
-    if (packed) {
-      int length = input.readRawVarint32();
-      int limit = input.pushLimit(length);
-      if (extension.descriptor.getLiteType() == WireFormat.FieldType.ENUM) {
-        while (input.getBytesUntilLimit() > 0) {
-          int rawValue = input.readEnum();
-          Object value =
-              extension.descriptor.getEnumType().findValueByNumber(rawValue);
-          if (value == null) {
-            // If the number isn't recognized as a valid value for this
-            // enum, drop it (don't even add it to unknownFields).
-            return true;
-          }
-          extensions.addRepeatedField(extension.descriptor,
-                                      extension.singularToFieldSetType(value));
-        }
-      } else {
-        while (input.getBytesUntilLimit() > 0) {
-          Object value =
-              FieldSet.readPrimitiveField(input,
-                                          extension.descriptor.getLiteType(),
-                                          /*checkUtf8=*/ false);
-          extensions.addRepeatedField(extension.descriptor, value);
-        }
-      }
-      input.popLimit(limit);
-    } else {
-      Object value;
-      switch (extension.descriptor.getLiteJavaType()) {
-        case MESSAGE: {
-          MessageLite.Builder subBuilder = null;
-          if (!extension.descriptor.isRepeated()) {
-            MessageLite existingValue =
-                (MessageLite) extensions.getField(extension.descriptor);
-            if (existingValue != null) {
-              subBuilder = existingValue.toBuilder();
-            }
-          }
-          if (subBuilder == null) {
-            subBuilder = extension.getMessageDefaultInstance()
-                .newBuilderForType();
-          }
-          if (extension.descriptor.getLiteType() ==
-              WireFormat.FieldType.GROUP) {
-            input.readGroup(extension.getNumber(),
-                            subBuilder, extensionRegistry);
-          } else {
-            input.readMessage(subBuilder, extensionRegistry);
-          }
-          value = subBuilder.build();
-          break;
-        }
-        case ENUM:
-          int rawValue = input.readEnum();
-          value = extension.descriptor.getEnumType()
-                           .findValueByNumber(rawValue);
-          // If the number isn't recognized as a valid value for this enum,
-          // write it to unknown fields object.
-          if (value == null) {
-            unknownFields.mergeVarintField(fieldNumber, rawValue);
-            return true;
-          }
-          break;
-        default:
-          value = FieldSet.readPrimitiveField(input,
-              extension.descriptor.getLiteType(),
-              /*checkUtf8=*/ false);
-          break;
-      }
-
-      if (extension.descriptor.isRepeated()) {
-        extensions.addRepeatedField(extension.descriptor,
-                                    extension.singularToFieldSetType(value));
-      } else {
-        extensions.setField(extension.descriptor,
-                            extension.singularToFieldSetType(value));
-      }
-    }
-
-    return true;
-  }
-
   // -----------------------------------------------------------------
 
   /** For use by generated code only. */
@@ -901,7 +921,7 @@ public abstract class GeneratedMessageLite<
           extends ExtensionLite<ContainingType, Type> {
 
     /**
-     * Create a new isntance with the given parameters.
+     * Create a new instance with the given parameters.
      *
      * The last parameter {@code singularType} is only needed for enum types.
      * We store integer values for enum types in a {@link ExtendableMessage}
@@ -913,7 +933,7 @@ public abstract class GeneratedMessageLite<
         final Type defaultValue,
         final MessageLite messageDefaultInstance,
         final ExtensionDescriptor descriptor,
-        Class singularType) {
+        final Class singularType) {
       // Defensive checks to verify the correct initialization order of
       // GeneratedExtensions and their related GeneratedMessages.
       if (containingTypeDefaultInstance == null) {
@@ -929,24 +949,12 @@ public abstract class GeneratedMessageLite<
       this.defaultValue = defaultValue;
       this.messageDefaultInstance = messageDefaultInstance;
       this.descriptor = descriptor;
-
-      // Use Java reflection to invoke the static method {@code valueOf} of
-      // enum types in order to convert integers to concrete enum objects.
-      this.singularType = singularType;
-      if (Internal.EnumLite.class.isAssignableFrom(singularType)) {
-        this.enumValueOf = getMethodOrDie(
-            singularType, "valueOf", int.class);
-      } else {
-        this.enumValueOf = null;
-      }
     }
 
     final ContainingType containingTypeDefaultInstance;
     final Type defaultValue;
     final MessageLite messageDefaultInstance;
     final ExtensionDescriptor descriptor;
-    final Class singularType;
-    final Method enumValueOf;
 
     /**
      * Default instance of the type being extended, used to identify that type.
@@ -988,7 +996,7 @@ public abstract class GeneratedMessageLite<
 
     Object singularFromFieldSetType(final Object value) {
       if (descriptor.getLiteJavaType() == WireFormat.JavaType.ENUM) {
-        return invokeOrDie(enumValueOf, null, (Integer) value);
+        return descriptor.enumTypeMap.findValueByNumber((Integer) value);
       } else {
         return value;
       }
@@ -1059,18 +1067,22 @@ public abstract class GeneratedMessageLite<
     @SuppressWarnings("unchecked")
     protected Object readResolve() throws ObjectStreamException {
       try {
-        Class messageClass = Class.forName(messageClassName);
-        Parser<?> parser =
-            (Parser<?>) messageClass.getField("PARSER").get(null);
-        return parser.parsePartialFrom(asBytes);
+        Class<?> messageClass = Class.forName(messageClassName);
+        java.lang.reflect.Field defaultInstanceField =
+            messageClass.getDeclaredField("DEFAULT_INSTANCE");
+        defaultInstanceField.setAccessible(true);
+        MessageLite defaultInstance = (MessageLite) defaultInstanceField.get(null);
+        return defaultInstance.newBuilderForType()
+            .mergeFrom(asBytes)
+            .buildPartial();
       } catch (ClassNotFoundException e) {
-        throw new RuntimeException("Unable to find proto buffer class", e);
+        throw new RuntimeException("Unable to find proto buffer class: " + messageClassName, e);
       } catch (NoSuchFieldException e) {
-        throw new RuntimeException("Unable to find PARSER", e);
+        throw new RuntimeException("Unable to find DEFAULT_INSTANCE in " + messageClassName, e);
       } catch (SecurityException e) {
-        throw new RuntimeException("Unable to call PARSER", e);
+        throw new RuntimeException("Unable to call DEFAULT_INSTANCE in " + messageClassName, e);
       } catch (IllegalAccessException e) {
-        throw new RuntimeException("Unable to call parseFrom method", e);
+        throw new RuntimeException("Unable to call parsePartialFrom", e);
       } catch (InvalidProtocolBufferException e) {
         throw new RuntimeException("Unable to understand proto buffer", e);
       }
@@ -1102,45 +1114,6 @@ public abstract class GeneratedMessageLite<
     }
     
     return (GeneratedExtension<MessageType, T>) extension;
-  }
-  
-  /**
-   * Represents the state needed to implement *ForType methods. Generated code
-   * must provide a static singleton instance by adding it with
-   * {@link GeneratedMessageLite#onLoad(Class, PrototypeHolder)} on class load.
-   * <ul>
-   * <li>{@link #getDefaultInstanceForType()}
-   * <li>{@link #getParserForType()}
-   * <li>{@link #newBuilderForType()}
-   * </ul>
-   * This allows us to trade three generated methods for a static Map.
-   */
-  protected static class PrototypeHolder<
-      MessageType extends GeneratedMessageLite<MessageType, BuilderType>,
-      BuilderType extends GeneratedMessageLite.Builder<
-          MessageType, BuilderType>> {
-    
-    private final MessageType defaultInstance;
-    private final Parser<MessageType> parser;
-    
-    public PrototypeHolder(
-        MessageType defaultInstance, Parser<MessageType> parser) {
-      this.defaultInstance = defaultInstance;
-      this.parser = parser;
-    }
-    
-    public MessageType getDefaultInstanceForType() {
-      return defaultInstance;
-    }
-
-    public Parser<MessageType> getParserForType() {
-      return parser;
-    }
-
-    @SuppressWarnings("unchecked") // Guaranteed by runtime.
-    public BuilderType newBuilderForType() {
-      return (BuilderType) defaultInstance.toBuilder();
-    }
   }
 
   /**
